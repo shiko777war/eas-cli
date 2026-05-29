@@ -9,6 +9,7 @@ This is the log of notable changes to EAS CLI and related packages.
 ### 🎉 New features
 
 - [build-tools] Auto-upload embedded bundle after build when `EAS_UPDATE_EXPERIMENTAL_UPLOAD_EMBEDDED_BUNDLE` is set. ([#3767](https://github.com/expo/eas-cli/pull/3767) by [@gwdp](https://github.com/gwdp))
+- [eas-cli] Non-interactive iOS App Store and Enterprise builds can now use the App Store Connect API key stored in EAS credentials (for example, the submission key) to validate and repair provisioning profiles on Apple servers, without requiring `EXPO_ASC_*` environment variables or an interactive Apple login. ([#3805](https://github.com/expo/eas-cli/pull/3805) by [@sswrk](https://github.com/sswrk))
 
 ### 🐛 Bug fixes
 
