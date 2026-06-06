@@ -8,6 +8,8 @@ This is the log of notable changes to EAS CLI and related packages.
 
 ### 🎉 New features
 
+- [eas-cli] Add support for non-interactive `eas update:rollback [GROUP_ID]`. The given update group must be the latest for its branch and runtime version; the previous update group is republished, or a roll back to the embedded update is published if there is none. ([#3825](https://github.com/expo/eas-cli/pull/3825) by [@quinlanj](https://github.com/quinlanj))
+
 ### 🐛 Bug fixes
 
 ### 🧹 Chores
