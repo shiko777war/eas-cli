@@ -4,6 +4,7 @@ import { BuildStepEnv } from '@expo/steps';
 import spawn from '@expo/turtle-spawn';
 import * as ngrok from '@ngrok/ngrok';
 import { graphql } from 'gql.tada';
+import { z } from 'zod';
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 
@@ -58,6 +59,72 @@ export function getNgrokAuthtokenOrThrow(env: BuildStepEnv): string {
     );
   }
   return authtoken;
+}
+
+const TurnIceServersSchema = z.array(
+  z.object({
+    urls: z.array(z.string()),
+    username: z.string().optional(),
+    credential: z.string().optional(),
+  })
+);
+
+/**
+ * Translate the EAS_SIMULATOR_TURN_ICE_SERVERS job secret (a JSON array of
+ * Cloudflare ICE servers, minted server-side by www) into serve-sim CLI flags:
+ * `--stun-url` (the credential-less entries) and
+ * `--turn-url/--turn-username/--turn-credential` (the entry carrying the
+ * short-lived credentials).
+ *
+ * Returns [] when the secret is absent or malformed so serve-sim falls back to
+ * its built-in P2P/STUN behavior. The credential is passed as a process arg and
+ * deliberately not logged: turtle-spawn never logs argv and the worker is
+ * single-tenant.
+ */
+export function getServeSimTurnArgs(env: BuildStepEnv, logger: bunyan): string[] {
+  const raw = env.EAS_SIMULATOR_TURN_ICE_SERVERS;
+  if (!raw) {
+    return [];
+  }
+
+  const parsed = TurnIceServersSchema.safeParse(safeJsonParse(raw));
+  if (!parsed.success) {
+    logger.warn(
+      'Ignoring EAS_SIMULATOR_TURN_ICE_SERVERS: not a valid ICE servers payload. ' +
+        'serve-sim will fall back to P2P/STUN.'
+    );
+    return [];
+  }
+  const iceServers = parsed.data;
+
+  const stunUrls = iceServers
+    .filter((server) => !server.username && !server.credential)
+    .flatMap((server) => server.urls);
+  const turnServer = iceServers.find((server) => server.username && server.credential);
+
+  const args: string[] = [];
+  if (stunUrls.length > 0) {
+    args.push('--stun-url', stunUrls.join(','));
+  }
+  if (turnServer?.username && turnServer.credential && turnServer.urls.length > 0) {
+    args.push(
+      '--turn-url',
+      turnServer.urls.join(','),
+      '--turn-username',
+      turnServer.username,
+      '--turn-credential',
+      turnServer.credential
+    );
+  }
+  return args;
+}
+
+function safeJsonParse(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
 }
 
 export async function uploadRemoteSessionConfigAsync({
@@ -132,6 +199,10 @@ export async function startServeSimWithTunnelAsync({
   timeoutMs: number;
 }): Promise<{ previewUrl: string; streamUrl: string }> {
   logger.info('Launching serve-sim with tunnel.');
+  const turnArgs = getServeSimTurnArgs(env, logger);
+  if (turnArgs.length > 0) {
+    logger.info('Configured serve-sim with Cloudflare TURN ICE servers.');
+  }
   const serveSim = spawnDetached({
     command: 'npx',
     args: [
@@ -147,6 +218,7 @@ export async function startServeSimWithTunnelAsync({
       '0.55',
       '--codec',
       'webrtc',
+      ...turnArgs,
     ],
     env,
   });
